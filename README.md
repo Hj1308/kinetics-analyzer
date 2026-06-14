@@ -1,185 +1,200 @@
-# EISForge 🔬⚡
+# kinetics-analyzer
 
-> **Open-source Electrochemical Impedance Spectroscopy (EIS) and Cyclic Voltammetry (CV) analysis toolkit with Physics-Informed Machine Learning.**
+A Python tool for fitting concentration-vs-time data to kinetic models used in
+catalysis, adsorption, and oxidative desulfurization (ODS) research.
 
-![Python](https://img.shields.io/badge/python-3.10%2B-blue)
-![License](https://img.shields.io/badge/license-MIT-green)
-![Status](https://img.shields.io/badge/status-alpha-orange)
-
-EISForge combines classical electrochemical analysis (CNLS fitting, Kramers–Kronig validation, ECSA, Koutecky–Levich) with a Physics-Informed Transformer architecture (**EIS-GPT**, in development) for automatic circuit interpretation.
-
----
-
-## Author & Citation
-
-**Hoda Jafari** — 📧 hoda.jaafari@gmail.com — 🔗 https://github.com/Hj1308
-First published: May 2026
-
-If you use EISForge in your research, please cite:
-
-```bibtex
-@software{jafari2026eisforge,
-  author    = {Jafari, Hoda},
-  title     = {EISForge: Physics-Informed Transformer for Electrochemical Impedance Spectroscopy},
-  year      = {2026},
-  publisher = {GitHub},
-  url       = {https://github.com/Hj1308/EISforge-},
-  note      = {Open-source EIS analysis with ML}
-}
-```
+Supports **multiple samples simultaneously** and outputs a comparative results
+table with rate constants, R² values, and half-lives for all models.
 
 ---
 
 ## Features
 
-### ✅ Available now
-
-| Module | Description |
-|---|---|
-| **CNLS circuit fitting** | Complex Non-Linear Least Squares with bounds, outlier detection, and IUPAC modulus weighting (`eisforge/core/fitter.py`) |
-| **Kramers–Kronig validation** | linKK (via `impedance.py`) with a custom Voigt-circuit fallback (`eisforge/core/validators.py`) |
-| **CV / LSV analysis** | Peak detection, onset potentials, automatic interpretation (`eisforge/analysis/`) |
-| **ECSA calculator** | H-UPD, CO stripping, and double-layer capacitance (Cdl) methods (`eisforge/analysis/ecsa_calculator.py`) |
-| **Koutecky–Levich analysis** | Rotating-disk electrode kinetics (`eisforge/analysis/koutecky_levich.py`) |
-| **EIS–CV correlation** | Cross-technique analysis (`eisforge/analysis/eis_cv_correlator.py`) |
-| **Batch processing** | Multi-file analysis with parallel processing (`eisforge/analysis/batch_analyzer.py`) |
-| **Uncertainty quantification** | Monte-Carlo dropout and active-learning query strategies (`eisforge/ml/uncertainty/`) |
-| **EIS-GPT architecture** | Transformer with spectrum tokenizer and physics-informed loss (Kramers–Kronig, causality, passivity terms) — architecture implemented, pretrained weights coming soon (`eisforge/ml/eis_gpt/`) |
-| **Streamlit web app** | Interactive UI for the full pipeline (`app.py`) |
-
-### 🚧 Planned (see Roadmap)
-
-DRT analysis · BioLogic (.mpt/.mpr) and Zahner (.ism) parsers · pretrained EIS-GPT foundation model · interactive Nyquist/Bode visualization module · band-edge (Ecb/Evb) calculator.
-
----
-
-## How EISForge compares
-
-| Feature | ZView | EC-Lab | EISForge |
-| --- | --- | --- | --- |
-| Circuit fitting (CNLS) | ✅ | ✅ | ✅ |
-| Kramers–Kronig validation | ✅ | ✅ | ✅ |
-| CV/LSV + ECSA analysis | ❌ | partial | ✅ |
-| ML-assisted interpretation | ❌ | ❌ | ✅ (in development) |
-| Physics-informed deep learning | ❌ | ❌ | 🚧 architecture ready |
-| DRT analysis | ❌ | partial | 🚧 planned |
-| Free & open source | ❌ | ❌ | ✅ MIT |
-
----
-
-## Core innovation: EIS-GPT 🧠
-
-EISForge introduces a **Physics-Informed Transformer** for EIS analysis. Instead of requiring the user to pre-select an equivalent circuit, the model is designed to:
-
-1. **Tokenize** EIS spectra (each frequency point = one token)
-2. **Enforce** Kramers–Kronig relations as physics constraints in the loss
-3. **Predict** circuit topology with uncertainty estimates
-4. **Estimate** initial parameters for CNLS refinement
-
-```
-L_total = L_reconstruction
-        + λ₁ × L_kramers_kronig
-        + λ₂ × L_causality
-        + λ₃ × L_passivity
-```
-
-> **Status:** the tokenizer, transformer, and physics-informed loss are implemented and unit-tested. Training on a large synthetic dataset and releasing pretrained weights is the next milestone — see the Roadmap.
+- **Multi-sample analysis** — one time column + N catalyst/sample columns
+- **Four kinetic models** — Zero Order, First Order, Pseudo-First Order (Lagergren), Second Order
+- **Half-life (t½)** calculated for every model
+- **Zero-guard** — safe handling of complete removal data (Ce → 0) via clipping with warnings
+- **Unit conversion** — supports ppm (mg/L), ppm-S (sulfur analyser output), or ppm of intact substrate (GC output)
+- **Lagergren diagnostic** — reports ΔC0% to detect deviation from ideal pseudo-first order kinetics
+- **Mass-balance validation** — cross-checks ppm-S vs ppm-substrate measurements
+- **File I/O** — reads CSV / Excel, writes results to CSV / Excel
+- **Auto-plots** — removal efficiency curve + 4 linearised fits + R² bar chart + t½ chart per sample
 
 ---
 
 ## Installation
 
-Requires **Python 3.10+**.
-
 ```bash
-git clone https://github.com/Hj1308/EISforge-.git
-cd EISforge-
-pip install -r requirements.txt
-pip install -e .
+pip install numpy pandas scipy matplotlib openpyxl
 ```
 
 ---
 
-## Quick start
+## Quick Start
 
-### Python API
+### From a file (recommended)
+
+Prepare your data as a CSV or Excel file with this structure:
+
+| time | Cat-A | Cat-B | Cat-C |
+|------|-------|-------|-------|
+| 0    | 500   | 500   | 500   |
+| 10   | 350   | 300   | 430   |
+| 30   | 200   | 130   | 340   |
+| 60   | 110   | 55    | 250   |
+| 120  | 30    | 8     | 120   |
+
+Then run:
 
 ```python
-from eisforge.core.analyzer import EisAnalyzer
+from kinetics import read_data, analyze_dataframe, save_results, plot_results
 
-ana = EisAnalyzer()
+df = read_data("ODS_data.xlsx", time_col="time")
 
-# Load data (Gamry .DTA, Autolab .idf, or generic .csv/.txt)
-dataset = ana.load("my_data.DTA")
+# If your data is ppm-S (sulfur analyser / XRF output):
+results, raw = analyze_dataframe(df, time_col="time",
+                                  conc_basis="sulfur", n_sulfur=1)
 
-# Validate data quality with Kramers-Kronig
-kk = ana.validate_kk(dataset)
+# If your data is ppm of the intact molecule (e.g. GC output for DBT):
+results, raw = analyze_dataframe(df, time_col="time",
+                                  conc_basis="substrate", molar_mass=184.26)
 
-# Fit an equivalent circuit (impedance.py syntax)
-result = ana.fit(dataset, circuit="R0-p(R1,CPE1)-Wo1",
-                 initial_guess=[15, 300, 1e-5, 0.9, 50, 1])
-print(result.parameter_table())
+# If your data is already in mg/L and no conversion needed:
+results, raw = analyze_dataframe(df, time_col="time", conc_basis="ppm")
+
+save_results(results, "kinetics_results.xlsx")
+plot_results(raw, "kinetics_plot.png")
+print(results)
 ```
 
-### Web interface
+### Interactive CLI
 
 ```bash
-streamlit run app.py
+python kinetics.py
+```
+
+Choose between:
+- `[1]` Load from CSV or Excel file
+- `[2]` Enter one sample manually
+- `[3]` Run built-in demo (3-catalyst ODS example)
+
+---
+
+## Kinetic Models
+
+| Model | Linearised Form | Slope | t½ Formula |
+|---|---|---|---|
+| Zero Order | Ce = C0 − k0·t | −k0 | C0 / (2·k0) |
+| First Order | ln(Ce/C0) = −k1·t | −k1 | ln(2) / k1 |
+| Pseudo-First Order | ln(Ce) = −k_pfo·t + ln(C0) | −k_pfo | ln(2) / k_pfo |
+| Second Order | 1/Ce = k2·t + 1/C0 | k2 | 1 / (k2·C0) |
+
+### Pseudo-First Order vs First Order
+
+Both models give the same k value from the slope. The difference is that in
+Pseudo-First Order the intercept is left free, so `C0_fit = exp(intercept)` is
+computed from the data. If `ΔC0% = |C0_fit − C0| / C0 × 100` is large (> 15%),
+this signals deviation from ideal Lagergren kinetics and should be noted in
+your analysis.
+
+---
+
+## Unit Conversion
+
+The `conc_basis` parameter controls how concentrations are handled:
+
+| conc_basis | Input unit | Conversion | Affected parameters |
+|---|---|---|---|
+| `"ppm"` | mg/L | None | k0 in mg/L/min, k2 in L/mg/min |
+| `"sulfur"` | ppm-S | ppm / (32.06 × 1000) / n_sulfur | k0 in mol/L/min, k2 in L/mol/min |
+| `"substrate"` | ppm molecule | ppm / (MW × 1000) | k0 in mol/L/min, k2 in L/mol/min |
+
+> **Note:** k_app, R², and t½ are insensitive to the choice of conc_basis.
+> Only k0 and k2 (which carry molar dimensions) change.
+
+---
+
+## Mass-Balance Validation
+
+Cross-check your ppm-S measurement (XRF) against your ppm-substrate
+measurement (GC) to catch unit errors early:
+
+```python
+from kinetics import validate_mass_balance
+
+validate_mass_balance(
+    ppm_S=500,
+    ppm_substrate=2873,        # ppm DBT measured by GC
+    molar_mass_substrate=184.26,
+    n_sulfur=1
+)
+```
+
+Expected output:
+```
+Mass-balance check:
+  Measured ppm-S  = 500.00 mg/L
+  Expected ppm-S  = 499.88 mg/L  (from 2873.00 ppm substrate, MW=184.26, n_S=1)
+  Deviation       = 0.0%
+  PASS (within 5% tolerance)
 ```
 
 ---
 
-## Supported instruments
-
-| Vendor | Format | Status |
-|---|---|---|
-| Gamry Instruments | `.DTA` | ✅ |
-| Metrohm Autolab | `.idf` (CV + EIS, multi-scan) | ✅ |
-| Generic | `.csv` / `.txt` (auto-detection) | ✅ |
-| BioLogic | `.mpt` / `.mpr` | 🚧 planned |
-| Zahner | `.ism` | 🚧 planned |
-
----
-
-## Project structure
+## Output Example
 
 ```
-eisforge/
-├── core/          # CNLS fitting engine, K-K validation, preprocessing
-├── parsers/       # Gamry, Autolab, generic CSV importers
-├── analysis/      # CV/LSV, ECSA, Koutecky-Levich, batch, EIS-CV correlation
-├── ml/
-│   ├── eis_gpt/   # Physics-Informed Transformer (tokenizer, model, loss)
-│   └── uncertainty/  # MC dropout, active learning
-├── knowledge/     # Literature-driven parameter guessing
-├── standards/     # Reference data for carbon materials
-└── utils/         # Experimental conditions, file helpers
-app.py             # Streamlit web application
-tests/             # pytest test suite
+==========================================================================================
+  KINETIC ANALYSIS  --  COMPARATIVE RESULTS
+==========================================================================================
+        C0          k0 (Zero)  R2 (Zero)  t_half_0   k1 (1st)  R2 (1st)  t_half_1  Best Model
+Sample
+Cat-A   500 mg/L    3.59       0.8371     69.7 min   0.0227    0.9941    30.5 min   First Order
+Cat-B   500 mg/L    3.57       0.7447     70.0 min   0.0338    0.9951    20.5 min   First Order
+Cat-C   500 mg/L    3.07       0.9662     81.5 min   0.0115    0.9979    60.5 min   First Order
 ```
 
 ---
 
-## Roadmap
+## File Structure
 
-- [x] Core EIS analysis engine (CNLS + Kramers–Kronig)
-- [x] Gamry / Autolab / CSV parsers
-- [x] CV, LSV, ECSA, and Koutecky–Levich analysis
-- [x] EIS-GPT architecture with physics-informed loss
-- [x] Streamlit web interface
-- [ ] BioLogic and Zahner parsers
-- [ ] DRT analysis (Tikhonov regularization)
-- [ ] Train EIS-GPT on synthetic spectra → release pretrained weights
-- [ ] Band-edge (Ecb/Evb) calculator for semiconductor photocatalysts
-- [ ] Zenodo DOI + first tagged release
+```
+kinetics-analyzer/
+├── kinetics.py        # Main module — all functions
+└── README.md
+```
 
 ---
 
-## Contributing
+## Common Use Cases
 
-Bug reports, feature requests, and pull requests are welcome — please open an [issue](https://github.com/Hj1308/EISforge-/issues).
+**Oxidative Desulfurization (ODS)**
+```python
+# Data measured as ppm-S by sulfur analyser (e.g. XRF, ANTEK)
+results, raw = analyze_dataframe(df, conc_basis="sulfur", n_sulfur=1)
+```
+
+**Adsorption / Water Treatment**
+```python
+# Data measured as ppm of contaminant (e.g. methylene blue, heavy metals)
+results, raw = analyze_dataframe(df, conc_basis="ppm")
+```
+
+**GC-measured substrate (e.g. DBT, BT, thiophene)**
+```python
+results, raw = analyze_dataframe(df, conc_basis="substrate",
+                                  molar_mass=184.26,  # DBT
+                                  n_sulfur=1)
+```
+
+---
 
 ## License
 
-MIT License — Copyright (c) 2026 Hoda Jafari.
-Free to use in research and commercial applications. **Please cite this work if you use it in your publications.**
+MIT License
+
+---
+
+## Author
+
+Hj1308 / Hoda Jaafari
